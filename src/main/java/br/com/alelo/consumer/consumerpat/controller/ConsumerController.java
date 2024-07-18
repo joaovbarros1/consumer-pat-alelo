@@ -1,132 +1,74 @@
 package br.com.alelo.consumer.consumerpat.controller;
 
-import br.com.alelo.consumer.consumerpat.entity.Consumer;
-import br.com.alelo.consumer.consumerpat.entity.Extract;
-import br.com.alelo.consumer.consumerpat.respository.ConsumerRepository;
-import br.com.alelo.consumer.consumerpat.respository.ExtractRepository;
-import lombok.extern.log4j.Log4j2;
+import br.com.alelo.consumer.consumerpat.domain.consumer.dto.DataCreateConsumer;
+import br.com.alelo.consumer.consumerpat.domain.consumer.dto.DataListConsumer;
+import br.com.alelo.consumer.consumerpat.domain.consumer.dto.DataUpdateConsumer;
+import br.com.alelo.consumer.consumerpat.domain.consumer.repository.ConsumerRepository;
+import br.com.alelo.consumer.consumerpat.domain.consumer.service.ConsumerService;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpStatus;
-import org.springframework.stereotype.Controller;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
+import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.util.UriComponentsBuilder;
 
-import java.util.Date;
-import java.util.List;
+import javax.validation.Valid;
 
-@Log4j2
-@Controller
-@RequestMapping("/consumer")
+@RestController
+@RequestMapping("/consumer-pat/v1/consumers")
 public class ConsumerController {
 
     @Autowired
-    ConsumerRepository repository;
+    private ConsumerRepository repository;
 
     @Autowired
-    ExtractRepository extractRepository;
+    private ConsumerService service;
 
+    /* Listar todos os clientes (obs.: tabela possui cerca de 50.000 registros - incluso a paginação) */
+    @GetMapping
+    public ResponseEntity<Page<DataListConsumer>> list(@PageableDefault(size = 20, page = 0, sort = {"name"}) Pageable pagination) {
+        var page = repository.findAllByActiveTrue(pagination).map(DataListConsumer::new);
 
-    /* Listar todos os clientes (obs.: tabela possui cerca de 50.000 registros) */
-    @ResponseBody
-    @ResponseStatus(HttpStatus.OK)
-    @RequestMapping(value = "/consumerList", method = RequestMethod.GET)
-    public List<Consumer> listAllConsumers() {
-        log.info("obtendo todos clientes");
-        var consumers = repository.getAllConsumersList();
-
-        return consumers;
+        return ResponseEntity.ok(page);
     }
 
     /* Cadastrar novos clientes */
-    @RequestMapping(value = "/createConsumer", method = RequestMethod.POST)
-    public void createConsumer(@RequestBody Consumer consumer) {
-        repository.save(consumer);
+    @PostMapping
+    @Transactional
+    public ResponseEntity<DataListConsumer> create(@RequestBody @Valid DataCreateConsumer data, UriComponentsBuilder uriBuilder) {
+
+        var consumer = service.createConsumer(data);
+
+        var uri = uriBuilder.path("/consumer-pat/v1/consumers/{id}").buildAndExpand(consumer.getId()).toUri();
+
+        return ResponseEntity.created(uri).body(new DataListConsumer(consumer));
     }
 
-    // Atualizar cliente, lembrando que não deve ser possível alterar o saldo do cartão
-    @RequestMapping(value = "/updateConsumer", method = RequestMethod.POST)
-    public void updateConsumer(@RequestBody Consumer consumer) {
-        repository.save(consumer);
+    /* Detalhar um determinado cliente - somente clientes ativos */
+    @GetMapping("/{id}")
+    public ResponseEntity<DataListConsumer> detail(@PathVariable Long id) {
+        var consumer = service.detailConsumer(id);
+        return ResponseEntity.ok(new DataListConsumer(consumer));
     }
 
-    /*
-     * Credito de valor no cartão
-     *
-     * cardNumber: número do cartão
-     * value: valor a ser creditado (adicionado ao saldo)
-     */
-    @RequestMapping(value = "/setcardbalance", method = RequestMethod.GET)
-    public void setBalance(int cardNumber, double value) {
-        Consumer consumer = null;
-        consumer = repository.findByDrugstoreNumber(cardNumber);
+    /* Atualizar um cliente - somente ativos - não é possível alterar o saldo do cartão, tem um controller do cartão que faz isso */
+    @PutMapping
+    @Transactional
+    public ResponseEntity<DataListConsumer> update(@RequestBody @Valid DataUpdateConsumer data) {
+        var consumer = service.updateConsumer(data);
 
-        if(consumer != null) {
-            // é cartão de farmácia
-            consumer.setDrugstoreCardBalance(consumer.getDrugstoreCardBalance() + value);
-            repository.save(consumer);
-        } else {
-            consumer = repository.findByFoodCardNumber(cardNumber);
-            if(consumer != null) {
-                // é cartão de refeição
-                consumer.setFoodCardBalance(consumer.getFoodCardBalance() + value);
-                repository.save(consumer);
-            } else {
-                // É cartão de combustivel
-                consumer = repository.findByFuelCardNumber(cardNumber);
-                consumer.setFuelCardBalance(consumer.getFuelCardBalance() + value);
-                repository.save(consumer);
-            }
-        }
+        return ResponseEntity.ok(new DataListConsumer(consumer));
     }
 
-    /*
-     * Débito de valor no cartão (compra)
-     *
-     * establishmentType: tipo do estabelecimento comercial
-     * establishmentName: nome do estabelecimento comercial
-     * cardNumber: número do cartão
-     * productDescription: descrição do produto
-     * value: valor a ser debitado (subtraído)
-     */
-    @ResponseBody
-    @RequestMapping(value = "/buy", method = RequestMethod.GET)
-    public void buy(int establishmentType, String establishmentName, int cardNumber, String productDescription, double value) {
-        Consumer consumer = null;
-        /* O valor só podem ser debitado do catão com o tipo correspondente ao tipo do estabelecimento da compra.
+    /* Deletando um cliente - exclusão lógica */
+    @DeleteMapping("/{id}")
+    @Transactional
+    public ResponseEntity<Void> delete(@PathVariable Long id) {
+        var consumer = repository.getReferenceById(id);
+        service.deleteConsumer(consumer);
 
-        *  Exemplo: Se a compra é em um estabelecimeto de Alimentação (food) então o valor só pode ser debitado do cartão alimentação
-        *
-        * Tipos dos estabelcimentos:
-        *    1) Alimentação (Food)
-        *    2) Farmácia (DrugStore)
-        *    3) Posto de combustivel (Fuel)
-        */
-
-        if (establishmentType == 1) {
-            // Para compras no cartão de alimentação o cliente recebe um desconto de 10%
-            Double cashback  = (value / 100) * 10;
-            value = value - cashback;
-
-            consumer = repository.findByFoodCardNumber(cardNumber);
-            consumer.setFoodCardBalance(consumer.getFoodCardBalance() - value);
-            repository.save(consumer);
-
-        }else if(establishmentType == 2) {
-            consumer = repository.findByDrugstoreNumber(cardNumber);
-            consumer.setDrugstoreCardBalance(consumer.getDrugstoreCardBalance() - value);
-            repository.save(consumer);
-
-        } else {
-            // Nas compras com o cartão de combustivel existe um acrescimo de 35%;
-            Double tax  = (value / 100) * 35;
-            value = value + tax;
-
-            consumer = repository.findByFuelCardNumber(cardNumber);
-            consumer.setFuelCardBalance(consumer.getFuelCardBalance() - value);
-            repository.save(consumer);
-        }
-
-        Extract extract = new Extract(establishmentName, productDescription, new Date(), cardNumber, value);
-        extractRepository.save(extract);
+        return ResponseEntity.noContent().build();
     }
-
 }
