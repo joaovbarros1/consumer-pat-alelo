@@ -18,7 +18,7 @@ import java.util.List;
 @RestControllerAdvice
 public class ErrorHandler {
 
-    /* Tratar erros de chamadas inválidas das URLs */
+    /* Tratar erros de chamadas inválidas das URLs e registros de bd não encontrados*/
     @ExceptionHandler(EntityNotFoundException.class)
     public ResponseEntity<Void> error404() {
         return ResponseEntity.notFound().build();
@@ -30,13 +30,13 @@ public class ErrorHandler {
         return ResponseEntity.badRequest().body(ex.getMessage());
     }
 
-    /* Tratar erros do strategy do SetCardBalance - não encontrou nenhum strategy com o tipo informado */
+    /* Tratar erros do strategy do SetCardBalance - não encontrou nenhum strategy com o tipo informado ou usuário não encontrado*/
     @ExceptionHandler(SetCardBalanceStrategyException.class)
     public ResponseEntity<String> errorSetCardBalance(SetCardBalanceStrategyException ex) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Erro: " + ex.getMessage());
     }
 
-    /* Tratar erros do strategy do BuyWithCard - não encontrou nenhum strategy com o tipo informado */
+    /* Tratar erros do strategy do BuyWithCard - não encontrou nenhum strategy com o tipo informado ou usuário não encontrado */
     @ExceptionHandler(BuyWithCardStrategyException.class)
     public ResponseEntity<String> errorBuyWithCard(BuyWithCardStrategyException ex) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Erro: " + ex.getMessage());
@@ -48,7 +48,7 @@ public class ErrorHandler {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("Erro: " + ex.getMessage());
     }
 
-    /* Tratar erros de informação de serviço da Alelo não existente - diferente de FOOD, FUEL ou DRUGSTORE */
+    /* Tratar erros de informação de serviço da Alelo não existente - diferentes de FOOD, FUEL ou DRUGSTORE */
     @ExceptionHandler(AleloServiceTypeNotFound.class)
     public ResponseEntity<String> errorAleloServiceTypeNotFound(AleloServiceTypeNotFound ex) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("Erro: " + ex.getMessage());
@@ -57,7 +57,7 @@ public class ErrorHandler {
     /* Tratar erros de saldo insuficiente nos cartões para compras */
     @ExceptionHandler(CardBalanceException.class)
     public ResponseEntity<String> errorInsufficientCardBalance(CardBalanceException ex) {
-        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body("Erro: " + ex.getMessage());
+        return ResponseEntity.status(HttpStatus.CONFLICT).body("Erro: " + ex.getMessage());
     }
 
     /* Tratar erros de validações dos campos para cadastro e atualizações */
